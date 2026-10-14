@@ -4,6 +4,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const STAGES=['KESİM','PRES','KORDON','BÜKÜM','DOĞRULTMA','GÖVDE KAYNAK','MONTAJ','ÇEVRE KAYNAK','FİTTİNGS KAYNAK','KULAK KULP KAYNAK','TANK TEMİZLİK','HİDROSTATİK TEST','BOYA','PAKETLEME','SEVKİYAT'];
 const LITRES=[5,9,26,45,83,149,180,267];
 let sb=null,session=null,profile=null,page='dashboard';
+const cbsInviteOnArrival = new URLSearchParams(location.hash.slice(1)).get('type') === 'invite' || new URLSearchParams(location.search).get('type') === 'invite';
 let state={orders:[],batches:[],serials:[],profiles:[],audit:[],processes:[],history:[]};
 const writable=()=>['admin','editor'].includes(profile?.role),admin=()=>profile?.role==='admin';
 function toast(s){const t=$('#toast');t.textContent=s;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),5500)}
@@ -62,7 +63,7 @@ $('#orders').innerHTML=`${writable()?`<div class="panel"><h2>Sipariş Oluştur</
 $('#serials').innerHTML=`${writable()?`<div class="panel"><h2>Proses Adet Girişi</h2><p class="muted small">Her prosese ulaşan toplam tüp adedini girin. Önceki aşamalara eksik giriş varsa sistem onları da bu adede tamamlar.</p><form id="processForm" class="form"><label>Sipariş / Litre<select name="batch_id" required>${batchesOptions()}</select></label><label>Proses<select name="process_name" required>${options(STAGES.map(x=>[x,x]))}</select></label><label>Bu prosese ulaşan toplam adet<input type="number" name="quantity" min="0" step="1" required placeholder="25"></label><button class="btn">Proses Adedini Kaydet</button></form></div>`:''}<div class="panel"><h2>Üretimdeki Tüplerin Durumu</h2><p class="muted small">Ulaşan adet: bu prosese kadar gelen toplam tüp. Bu aşamada: bir sonraki prosese henüz geçmeyen tüp.</p>${activeBatches().map(b=>`<div class="panel"><h2>${esc(order(b.order_id)?.code)} / ${b.litre} LT / ${bar(b)} BAR · ${b.target} adet</h2><div class="progress"><i style="width:${progress(b)}%"></i></div><p class="muted">Genel proses ilerlemesi: <b>${progress(b)}%</b> · Sevk edilen: <b>${shipped(b)}</b></p>${processTable(b)}</div>`).join('')||'<p>Henüz üretim grubu bulunmuyor.</p>'}</div>`;
 $('#board').innerHTML=`<div class="boardgrid">${activeBatches().map(b=>{const q=quantities(b),pct=progress(b);return `<div class="boardcard"><div class="boardcode">${esc(order(b.order_id)?.code)}</div><div class="boardlitre">${b.litre} LT · ${bar(b)} BAR</div><div class="muted">PLAN ${b.target} · SEVK ${shipped(b)}</div><div class="progress"><i style="width:${pct}%"></i></div><p class="muted"><b>${pct}% proses ilerlemesi</b> · ${esc(b.start_date||'—')} → ${esc(b.end_date||'—')}</p>${STAGES.map((st,i)=>q[i]||waiting(b,i)?`<div class="stage"><span>${esc(st)}</span><strong>${q[i]} ULAŞAN${i<STAGES.length-1?' · '+waiting(b,i)+' BEKLEYEN':''}</strong></div>`:'').join('')||'<p class="muted">Henüz proses adedi girilmedi.</p>'}</div>`}).join('')||'<div class="panel">Henüz üretim planı bulunmuyor.</div>'}</div>`;
 $('#board').insertAdjacentHTML('afterbegin',`<div class="panel" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><h2 style="margin:0">Üretim Panosu</h2><p class="muted small" style="margin:5px 0 0">Ekranda görünen üretim durumunu PDF olarak kaydedin.</p></div><button type="button" id="boardPdf" class="btn">PDF Rapor Al</button></div>`);
- $('#users').innerHTML=admin()?`<div class="panel"><h2>+ Yeni Kullanıcı Davet Et</h2><p class="muted small">Geçerli bir e posta adresi girin.</p><form id="inviteForm" class="form"><label>Şirket e-postası<input type="email" name="email" placeholder="personel@cukurovabombe.com" required></label><label>Yetki<select name="role"><option value="viewer">Görüntüleyici</option><option value="editor">Yetkili Personel</option><option value="admin">Yönetici</option></select></label><button class="btn">+ Davet Gönder</button></form></div><div class="panel"><h2>Kullanıcı Yetkileri</h2><div class="tablewrap"><table><thead><tr><th>E-posta</th><th>Rol</th><th>Durum</th><th>İşlem</th></tr></thead><tbody>${state.profiles.map(p=>`<tr><td>${esc(p.email)}${p.id===profile.id?' (Sen)':''}</td><td><select class="stage-select" data-role="${p.id}" ${p.id===profile.id?'disabled':''}>${options([['admin','Yönetici'],['editor','Yetkili Personel'],['viewer','Görüntüleyici']],p.role)}</select></td><td><label><input type="checkbox" data-active="${p.id}" ${p.active?'checked':''} ${p.id===profile.id?'disabled':''}> Aktif</label></td><td><button class="btn secondary" data-saveuser="${p.id}" ${p.id===profile.id?'disabled':''}>Kaydet</button></td></tr>`).join('')}</tbody></table></div></div>`:'';
+ $('#users').innerHTML=admin()?`<div class="panel"><h2>+ Yeni Kullanıcı Davet Et</h2><p class="muted small">Geçerli bir e posta adresi girin.</p><form id="inviteForm" class="form"><label>E-posta adresi<input type="email" name="email" placeholder="ornek@gmail.com" required></label><label>Yetki<select name="role"><option value="viewer">Görüntüleyici</option><option value="editor">Yetkili Personel</option><option value="admin">Yönetici</option></select></label><button class="btn">+ Davet Gönder</button></form></div><div class="panel"><h2>Kullanıcı Yetkileri</h2><div class="tablewrap"><table><thead><tr><th>E-posta</th><th>Rol</th><th>Durum</th><th>İşlem</th></tr></thead><tbody>${state.profiles.map(p=>`<tr><td>${esc(p.email)}${p.id===profile.id?' (Sen)':''}</td><td><select class="stage-select" data-role="${p.id}" ${p.id===profile.id?'disabled':''}>${options([['admin','Yönetici'],['editor','Yetkili Personel'],['viewer','Görüntüleyici']],p.role)}</select></td><td><label><input type="checkbox" data-active="${p.id}" ${p.active?'checked':''} ${p.id===profile.id?'disabled':''}> Aktif</label></td><td><button class="btn secondary" data-saveuser="${p.id}" ${p.id===profile.id?'disabled':''}>Kaydet</button></td></tr>`).join('')}</tbody></table></div></div>`:'';
  $('#audit').innerHTML=admin()?`<div class="panel"><h2>Günlük İşlem Geçmişi</h2><p class="muted small">Yalnızca sipariş yönetimi ve proses girişleri. Tarih seçerek geçmişi inceleyebilirsiniz. Adet, proses için yapılan net değişimdir.</p><label>Tarih seçin <input id="historyDate" type="date" value="${esc(historyDate)}"></label><button type="button" class="btn secondary" id="historyAll">Tüm Tarihler</button><div id="historyRows">${historyTable()}</div></div>`:
 $$('section#dashboard,section#orders,section#serials,section#board,section#users,section#audit').forEach(x=>x.classList.toggle('hidden',x.id!==page));}
 function showPage(p){if((p==='users'||p==='audit')&&!admin())return;page=p;$$('#menu [data-page]').forEach(x=>x.classList.toggle('active',x.dataset.page===p));const names={dashboard:'Genel Bakış',orders:'Sipariş Yönetimi',serials:'Proses Takibi',board:'Üretim Panosu',users:'Kullanıcı Yönetimi',audit:'İşlem Geçmişi'};$('#title').textContent=names[p];$$('section#dashboard,section#orders,section#serials,section#board,section#users,section#audit').forEach(x=>x.classList.toggle('hidden',x.id!==p))}
@@ -123,7 +124,27 @@ function exportBoardPDF(){
   win.document.open();win.document.write(html);win.document.close();
 }
 function exportCSV(){const rows=[['Sipariş','Litre','Basınç (BAR)','Plan','Başlangıç','Bitiş','Proses','Ulaşan Adet','Bu Aşamada Bekleyen','İlerleme %']];for(const b of activeBatches()){const q=quantities(b);STAGES.forEach((st,i)=>rows.push([order(b.order_id)?.code||'',b.litre,bar(b),b.target,b.start_date||'',b.end_date||'',st,q[i],i===STAGES.length-1?'':waiting(b,i),progress(b)]))}const csv='\ufeff'+rows.map(r=>r.map(x=>'"'+String(x).replaceAll('"','""')+'"').join(';')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='CBS_Proses_Takip_Raporu.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),500)}
-document.addEventListener('submit',async e=>{const form=e.target;if(form.id==='setupForm'){e.preventDefault();const url=$('#supabaseUrl').value.trim(),key=$('#supabaseKey').value.trim();if(!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url)){err(Error('Supabase proje URL adresini kontrol edin.'));return}localStorage.setItem('cbs_url',url.replace(/\/$/,''));localStorage.setItem('cbs_key',key);location.reload();return}if(form.id==='loginForm'){e.preventDefault();$('#loginError').textContent='';try{const result=await sb.auth.signInWithPassword({email:$('#email').value.trim(),password:$('#password').value});const d=check(result);await enter(d.session)}catch(ex){$('#loginError').textContent=ex.message}return}if(form.id==='inviteForm'){e.preventDefault();if(!admin()){err(Error('Yalnızca yöneticiler kullanıcı davet edebilir.'));return}const fd=new FormData(form);const email=String(fd.get('email')||'').trim().toLowerCase(),role=String(fd.get('role')||'viewer');if(!/^[^\s@]+@cukurovabombe\.com$/i.test(email)){err(Error('Yalnızca @cukurovabombe.com adresleri kullanılabilir.'));return}try{const {data,error}=await sb.functions.invoke('cbs-invite-user',{body:{email,role}});if(error)throw error;if(!data?.ok)throw Error(data?.error||'Davet gönderilemedi.');form.reset();await refresh();toast('Davet gönderildi. Personelin e-postasını kontrol edin.')}catch(ex){err(ex)}return}if(['orderForm','quickOrder','renameForm','batchForm','serialForm','processForm'].includes(form.id)){e.preventDefault();try{await submitForm(form)}catch(ex){err(ex)}}});
+document.addEventListener('submit',async e=>{const form=e.target;if(form.id==='setupForm'){e.preventDefault();const url=$('#supabaseUrl').value.trim(),key=$('#supabaseKey').value.trim();if(!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url)){err(Error('Supabase proje URL adresini kontrol edin.'));return}localStorage.setItem('cbs_url',url.replace(/\/$/,''));localStorage.setItem('cbs_key',key);location.reload();return}if(form.id==='loginForm'){e.preventDefault();$('#loginError').textContent='';try{const result=await sb.auth.signInWithPassword({email:$('#email').value.trim(),password:$('#password').value});const d=check(result);await enter(d.session)}catch(ex){$('#loginError').textContent=ex.message}return}if(form.id==='inviteForm'){e.preventDefault();if(!admin()){err(Error('Yalnızca yöneticiler kullanıcı davet edebilir.'));return}const fd=new FormData(form);const email=String(fd.get('email')||'').trim().toLowerCase(),role=String(fd.get('role')||'viewer');if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(email)){err(Error('Geçerli bir e-posta adresi girin.'));return}const btn=form.querySelector('button[type=submit]');
+  if(btn){btn.disabled=true;btn.textContent='Davet gönderiliyor...'}
+  try{
+    const {data,error}=await sb.functions.invoke('cbs-invite-user',{body:{email,role}});
+    if(error){
+      let message=error.message||'Davet gönderilemedi.';
+      if(error.context&&typeof error.context.json==='function'){
+        try{const detail=await error.context.json();message=detail.error||detail.message||message}catch(_e){}
+      }
+      throw Error(message);
+    }
+    if(!data?.ok)throw Error(data?.error||'Davet gönderilemedi.');
+    form.reset();toast('Davet gönderildi. Personelin e-postasını kontrol edin.');
+    try{await refresh()}catch(refreshError){console.warn('Davet gönderildi fakat liste yenilenemedi:',refreshError)}
+  }catch(ex){
+    err(ex);
+    let box=form.querySelector('[data-invite-error]');
+    if(!box){box=document.createElement('p');box.dataset.inviteError='';box.setAttribute('role','alert');box.style.cssText='color:#b91c1c;font-weight:600;width:100%;margin:8px 0';form.append(box)}
+    box.textContent=ex.message||'Davet gönderilemedi.';
+  }finally{if(btn){btn.disabled=false;btn.textContent='+ Davet Gönder'}}
+  return}if(['orderForm','quickOrder','renameForm','batchForm','serialForm','processForm'].includes(form.id)){e.preventDefault();try{await submitForm(form)}catch(ex){err(ex)}}});
 document.addEventListener('click',async e=>{const nav=e.target.closest('[data-page]');if(nav){showPage(nav.dataset.page);return}if(e.target.closest('#newOrder')){$('#modal').showModal();return}if(e.target.closest('#close')){$('#modal').close();return}if(e.target.closest('#reload')){try{await refresh();toast('Veriler yenilendi.')}catch(ex){err(ex)}return}if(e.target.closest('#historyAll')){historyDate='';const input=$('#historyDate');if(input)input.value='';const rows=$('#historyRows');if(rows)rows.innerHTML=historyTable();return}if(e.target.closest('#boardPdf')){exportBoardPDF();return}if(e.target.closest('#export')){exportCSV();return}if(e.target.closest('#logout')){await sb.auth.signOut();loginScreen();return}const action=e.target.closest('[data-archive-order],[data-restore-order],[data-del-order],[data-del-batch],[data-del-serial]');if(action){if(!admin()){err(Error('Yalnızca yöneticiler bu işlemi yapabilir.'));return}try{const ds=action.dataset;let table,id,verb,label,body=null;if(ds.archiveOrder){table='orders';id=Number(ds.archiveOrder);verb='arşivle';label=order(id)?.code;body={archived_at:new Date().toISOString()}}else if(ds.restoreOrder){table='orders';id=Number(ds.restoreOrder);verb='geri yükle';label=order(id)?.code;body={archived_at:null}}else if(ds.delOrder){table='orders';id=Number(ds.delOrder);verb='sil';label=order(id)?.code;}else if(ds.delBatch){table='batches';id=Number(ds.delBatch);verb='sil';const b=batch(id);label=`${order(b?.order_id)?.code} / ${b?.litre} LT / ${bar(b)} BAR`;}else{table='serials';id=Number(ds.delSerial);verb='sil';label=state.serials.find(s=>s.id===id)?.serial}if(!Number.isFinite(id)||!label)throw Error('Kayıt bulunamadı.');if(!await cbsConfirm(verb==='sil'?`${label} kaydını silmek istediğinize emin misiniz? Bağlı üretim grupları, proses adetleri ve seri numaraları da silinebilir. Bu işlem geri alınamaz.`:`${label} kaydını ${verb==='arşivle'?'arşivlemek':'geri yüklemek'} istediğinize emin misiniz?`))return;let q=body?sb.from(table).update(body).eq('id',id):sb.from(table).delete().eq('id',id);check(await q.select('id').single());if(table!=='serials')await logHistory({code:table==='orders'?label:order(batch(id)?.order_id)?.code||label,action:table==='orders'?(verb==='sil'?'Sipariş silindi':verb==='arşivle'?'Sipariş arşivlendi':'Sipariş geri yüklendi'):'Üretim grubu silindi'});await refresh();toast(`İşlem başarılı: ${label}`)}catch(ex){err(ex)}return}const save=e.target.closest('[data-saveuser]');if(save&&admin()){const id=save.dataset.saveuser;if(id===profile.id)return;const role=document.querySelector(`[data-role="${id}"]`).value;const active=document.querySelector(`[data-active="${id}"]`).checked;try{check(await sb.from('profiles').update({role,active}).eq('id',id));await refresh();toast('Kullanıcı yetkisi güncellendi.')}catch(ex){err(ex)}}});
 document.addEventListener('change',async e=>{if(e.target.id==='historyDate'){historyDate=e.target.value;$('#historyRows').innerHTML=historyTable();return}const sel=e.target.closest('[data-stage]');if(!sel)return;const s=state.serials.find(x=>x.id===Number(sel.dataset.stage));if(!s)return;try{await mutation(async()=>check(await sb.from('serials').update({stage:sel.value,updated_at:new Date().toISOString()}).eq('id',s.id)))}catch(ex){sel.value=s.stage;err(ex)}});
 
@@ -136,7 +157,7 @@ async function handleInvitation() {
                    hash.has('access_token') ||
                    query.has('token_hash');
 
-  if (!isInvite) return false;
+  if (!isInvite && !cbsInviteOnArrival) return false;
 
   const { data: { session: inviteSession } } =
     await sb.auth.getSession();
@@ -177,45 +198,3 @@ document.addEventListener('submit', async e => {
 });
 
 boot();
-
-/* CBS - Tüm e-posta adresleri için yönetici daveti */
-document.addEventListener('submit', async function(event) {
-  const form = event.target;
-  if (form.id !== 'inviteForm') return;
-
-  event.preventDefault();
-  event.stopImmediatePropagation();
-
-  if (!admin()) {
-    err(Error('Yalnızca yöneticiler davet gönderebilir.'));
-    return;
-  }
-
-  const fd = new FormData(form);
-  const email = String(fd.get('email') || '').trim().toLowerCase();
-  const role = String(fd.get('role') || 'viewer');
-
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    err(Error('Geçerli bir e-posta adresi girin.'));
-    return;
-  }
-
-  try {
-    const { data, error } = await sb.functions.invoke(
-      'cbs-invite-user',
-      { body: { email, role } }
-    );
-
-    if (error) throw error;
-    if (!data?.ok) {
-      throw Error(data?.error || 'Davet gönderilemedi.');
-    }
-
-    form.reset();
-    await refresh();
-    toast('Davet gönderildi. E-posta kutusunu kontrol edin.');
-  } catch (ex) {
-    err(ex);
-  }
-}, true);
-
