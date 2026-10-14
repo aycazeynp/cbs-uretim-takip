@@ -1,53 +1,43 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-const headers = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Content-Type': 'application/json',
-};
-const reply = (status: number, data: Record<string, unknown>) =>
-  new Response(JSON.stringify(data), { status, headers });
-
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers });
-  if (req.method !== 'POST') return reply(405, { error: 'Method not allowed' });
-  try {
-    const url = Deno.env.get('SUPABASE_URL');
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    if (!url || !anonKey || !serviceKey) return reply(500, { error: 'Sunucu yapılandırması eksik.' });
-
-    const authorization = req.headers.get('Authorization') || '';
-    if (!authorization.startsWith('Bearer ')) return reply(401, { error: 'Giriş gerekli.' });
-    const userClient = createClient(url, anonKey, { global: { headers: { Authorization: authorization } } });
-    const { data: auth, error: authError } = await userClient.auth.getUser(authorization.slice(7));
-    if (authError || !auth.user) return reply(401, { error: 'Oturum doğrulanamadı.' });
-
-    const service = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
-    const { data: manager, error: managerError } = await service.from('profiles')
-      .select('role,active').eq('id', auth.user.id).single();
-    if (managerError || !manager?.active || manager.role !== 'admin')
-      return reply(403, { error: 'Yalnızca aktif yöneticiler davet gönderebilir.' });
-
-    const payload = await req.json();
-    const email = String(payload?.email || '').trim().toLowerCase();
-    const role = String(payload?.role || 'viewer');
-    if (!/^[^\s@]+@cukurovabombe\.com$/.test(email))
-      return reply(400, { error: 'Yalnızca şirket e-postası kullanılabilir.' });
-    if (!['admin','editor','viewer'].includes(role))
-      return reply(400, { error: 'Geçersiz rol.' });
-
-    const { data: invitation, error: inviteError } = await service.auth.admin.inviteUserByEmail(email);
-    if (inviteError) return reply(400, { error: inviteError.message });
-    if (!invitation.user) return reply(500, { error: 'Kullanıcı oluşturulamadı.' });
-    // Trigger profili oluşturur; yetkiyi servis hesabı ile güncelleriz.
-    const { error: roleError } = await service.from('profiles').upsert({
-      id: invitation.user.id, email, role, active: true,
-    }, { onConflict: 'id' });
-    if (roleError) return reply(500, { error: 'Davet gönderildi ancak rol atanamadı. Yönetici panelinden kontrol edin.' });
-    return reply(200, { ok: true });
-  } catch (_error) {
-    return reply(500, { error: 'Beklenmeyen sunucu hatası.' });
-  }
-});
+'use strict';
+const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const STAGES=['SAC KESME','PRES','KORDON','BÜKÜM','DOĞRULTMA','ÇEVRE KAYNAK','MONTAJ','BOYA','PAKETLEME','TAMAMLANDI'];
+const LITRES=[5,9,26,45,83,149,180];
+let sb=null,session=null,profile=null,page='dashboard';
+let state={orders:[],batches:[],serials:[],profiles:[],audit:[]};
+const writable=()=>['admin','editor'].includes(profile?.role),admin=()=>profile?.role==='admin';
+function toast(s){const t=$('#toast');t.textContent=s;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),5500)}
+function err(e){toast(e?.message||String(e))}
+function check({error,data}){if(error)throw error;return data}
+function initClient(){const cfg=window.CBS_CONFIG||{};const url=cfg.supabaseUrl||localStorage.getItem('cbs_url');const key=cfg.supabaseAnonKey||localStorage.getItem('cbs_key');if(!url||!key){$('#setup').classList.remove('hidden');return false}if(!window.supabase?.createClient){$('#setup').classList.remove('hidden');toast('Supabase kütüphanesi yüklenemedi; internet bağlantısını kontrol edin.');return false}sb=window.supabase.createClient(url,key,{auth:{persistSession:true,autoRefreshToken:true}});return true}
+function loginScreen(){session=null;profile=null;$('#app').classList.add('hidden');$('#login').classList.remove('hidden')}
+async function boot(){if(!initClient())return;try{const {data:{session:s},error}=await sb.auth.getSession();if(error)throw error;if(s)await enter(s);else loginScreen()}catch(e){loginScreen();err(e)}}
+async function enter(s){session=s;const p=check(await sb.from('profiles').select('id,email,role,active').eq('id',s.user.id).maybeSingle());if(!p||!p.active) {await sb.auth.signOut();loginScreen();throw Error('Hesabınız aktif değil. Yöneticinize başvurun.')}profile=p;$('#login').classList.add('hidden');$('#setup').classList.add('hidden');$('#app').classList.remove('hidden');$('#who').textContent=p.email;$('#userEmail').textContent=p.email;$('#roleLabel').textContent=({admin:'Yönetici',editor:'Yetkili Personel',viewer:'Görüntüleyici'})[p.role];$('#usersNav').hidden=!admin();$('#auditNav').hidden=!admin();$('#newOrder').hidden=!writable();await refresh();showPage('dashboard')}
+async function refresh(){if(!session)return;const [o,b,s]=await Promise.all([sb.from('orders').select('*').order('id',{ascending:false}),sb.from('batches').select('*').order('id',{ascending:false}),sb.from('serials').select('*').order('id',{ascending:false})]);state.orders=check(o);state.batches=check(b);state.serials=check(s);if(admin()){state.profiles=check(await sb.from('profiles').select('id,email,role,active,created_at').order('created_at'));state.audit=check(await sb.from('audit').select('at,email,action,details').order('at',{ascending:false}).limit(100))}render()}
+function order(id){return state.orders.find(o=>o.id===id)}function batch(id){return state.batches.find(b=>b.id===id)}function serialsFor(id){return state.serials.filter(s=>s.batch_id===id)}
+function fmt(d){return d?new Date(d).toLocaleDateString('tr-TR'):'—'}
+function countDone(b){return serialsFor(b.id).filter(s=>s.stage==='TAMAMLANDI').length}
+function options(a,selected){return a.map(x=>`<option value="${esc(x[0])}" ${String(x[0])===String(selected)?'selected':''}>${esc(x[1])}</option>`).join('')}
+function ordersOptions(){return options(state.orders.map(o=>[o.id,o.code]))}
+function batchesOptions(){return options(state.batches.map(b=>[b.id,`${order(b.order_id)?.code||'?'} / ${b.litre} LT`]))}
+function summaryTable(){return `<div class="tablewrap"><table><thead><tr><th>Sipariş</th><th>Litre</th><th>Plan</th><th>Kayıt</th><th>Tamamlanan</th><th>İlerleme</th><th>Teslim</th></tr></thead><tbody>${state.batches.map(b=>{const a=serialsFor(b.id),done=countDone(b),pct=b.target?Math.min(100,Math.round(done/b.target*100)):0;return `<tr><td><b>${esc(order(b.order_id)?.code)}</b></td><td>${b.litre} LT</td><td>${b.target}</td><td>${a.length}</td><td>${done}</td><td><div class="progress"><i style="width:${pct}%"></i></div><small>${pct}%</small></td><td>${esc(b.end_date||'—')}</td></tr>`}).join('')||'<tr><td colspan="7">Henüz üretim planı bulunmuyor.</td></tr>'}</tbody></table></div>`}
+function render(){const total=state.serials.length,done=state.serials.filter(s=>s.stage==='TAMAMLANDI').length;$('#dashboard').innerHTML=`<div class="stats"><div class="stat"><div class="label">TOPLAM SİPARİŞ</div><div class="number">${state.orders.length}</div><div class="meta">Kayıtlı sipariş</div></div><div class="stat"><div class="label">ÜRETİM GRUBU</div><div class="number">${state.batches.length}</div><div class="meta">Litre bazlı plan</div></div><div class="stat"><div class="label">SERİ NUMARASI</div><div class="number">${total}</div><div class="meta">Takip edilen ürün</div></div><div class="stat"><div class="label">TAMAMLANAN</div><div class="number">${done}</div><div class="meta">${total?Math.round(done/total*100):0}% seri bazında</div></div></div><div class="panel"><h2>Üretim Durumu</h2>${summaryTable()}</div>`;
+$('#orders').innerHTML=`${writable()?`<div class="panel"><h2>Sipariş Oluştur</h2><form id="orderForm" class="form"><label>Sipariş kodu<input name="code" placeholder="CBS317" maxlength="40" required></label><button class="btn">+ Sipariş Ekle</button></form></div><div class="panel"><h2>Sipariş Kodu Düzenle</h2><form id="renameForm" class="form"><label>Sipariş<select name="id" required>${ordersOptions()}</select></label><label>Yeni kod<input name="code" maxlength="40" required></label><button class="btn">Kaydet</button></form></div><div class="panel"><h2>Litre Grubu / Üretim Planı</h2><form id="batchForm" class="form"><label>Sipariş<select name="order_id" required>${ordersOptions()}</select></label><label>Litre<select name="litre">${options(LITRES.map(n=>[n,n+' LT']))}</select></label><label>Planlanan adet<input type="number" name="target" min="0" required></label><label>Başlangıç<input type="date" name="start_date"></label><label>Bitiş<input type="date" name="end_date"></label><button class="btn">Planı Kaydet</button></form><p class="muted small">Aynı sipariş ve litre yeniden kaydedilirse mevcut plan güncellenir.</p></div>`:''}<div class="panel"><h2>Kayıtlı Üretim Planları</h2>${summaryTable()}</div>`;
+$('#serials').innerHTML=`${writable()?`<div class="panel"><h2>Seri Numarası Ekle</h2><form id="serialForm" class="form"><label>Sipariş / litre<select name="batch_id" required>${batchesOptions()}</select></label><label>Seri numarası<input name="serial" maxlength="80" required placeholder="45622"></label><label>İlk proses<select name="stage">${options(STAGES.map(x=>[x,x]),'SAC KESME')}</select></label><button class="btn">+ Seri No Ekle</button></form></div>`:''}<div class="panel"><div class="head"><h2>Seri Numarası Takibi</h2><input id="searchSerial" placeholder="Seri no veya sipariş ara..."></div><div class="tablewrap"><table><thead><tr><th>Sipariş</th><th>Litre</th><th>Seri No</th><th>Proses</th><th>Güncelleme</th></tr></thead><tbody id="serialRows"></tbody></table></div></div>`;
+$('#board').innerHTML=`<div class="boardgrid">${state.batches.map(b=>{let a=serialsFor(b.id),d=countDone(b),pct=b.target?Math.min(100,Math.round(d/b.target*100)):0;return `<div class="boardcard"><div class="boardcode">${esc(order(b.order_id)?.code)}</div><div class="boardlitre">${b.litre} LT</div><div class="muted">PLAN ${b.target} · KAYIT ${a.length} · TAMAM ${d}</div><div class="progress"><i style="width:${pct}%"></i></div><p class="muted">${pct}% tamamlandı · ${esc(b.start_date||'—')} → ${esc(b.end_date||'—')}</p>${STAGES.map(st=>{let n=a.filter(s=>s.stage===st).length;return n?`<div class="stage"><span>${esc(st)}</span><strong>${n} ADET</strong></div>`:''}).join('')||'<p class="muted">Henüz seri numarası girilmedi.</p>'}</div>`}).join('')||'<div class="panel">Henüz üretim planı bulunmuyor.</div>'}</div>`;
+$('#users').innerHTML=admin()?`<div class="panel"><h2>+ Yeni Kullanıcı Davet Et</h2><p class="muted small">Yalnızca @cukurovabombe.com adresleri davet edilebilir.</p><form id="inviteForm" class="form"><label>Şirket e-postası<input type="email" name="email" placeholder="personel@cukurovabombe.com" required></label><label>Yetki<select name="role"><option value="viewer">Görüntüleyici</option><option value="editor">Yetkili Personel</option><option value="admin">Yönetici</option></select></label><button class="btn">+ Davet Gönder</button></form></div><div class="panel"><h2>Kullanıcı Yetkileri</h2><div class="tablewrap"><table><thead><tr><th>E-posta</th><th>Rol</th><th>Durum</th><th>İşlem</th></tr></thead><tbody>${state.profiles.map(p=>`<tr><td>${esc(p.email)}${p.id===profile.id?' (Sen)':''}</td><td><select class="stage-select" data-role="${p.id}" ${p.id===profile.id?'disabled':''}>${options([['admin','Yönetici'],['editor','Yetkili Personel'],['viewer','Görüntüleyici']],p.role)}</select></td><td><label><input type="checkbox" data-active="${p.id}" ${p.active?'checked':''} ${p.id===profile.id?'disabled':''}> Aktif</label></td><td><button class="btn secondary" data-saveuser="${p.id}" ${p.id===profile.id?'disabled':''}>Kaydet</button></td></tr>`).join('')}</tbody></table></div></div>`:'';
+$('#audit').innerHTML=admin()?`<div class="panel"><h2>Son İşlemler</h2><div class="tablewrap"><table><thead><tr><th>Tarih</th><th>Kullanıcı</th><th>İşlem</th><th>Ayrıntı</th></tr></thead><tbody>${state.audit.map(a=>`<tr><td>${fmt(a.at)}</td><td>${esc(a.email)}</td><td>${esc(a.action)}</td><td><span class="muted">${esc((a.details||'').slice(0,140))}</span></td></tr>`).join('')}</tbody></table></div></div>`:'';
+renderSerialRows();$$('section#dashboard,section#orders,section#serials,section#board,section#users,section#audit').forEach(x=>x.classList.toggle('hidden',x.id!==page));}
+function renderSerialRows(){const el=$('#serialRows');if(!el)return;const q=($('#searchSerial')?.value||'').trim().toLocaleUpperCase('tr-TR');el.innerHTML=state.serials.filter(s=>{const b=batch(s.batch_id);return (`${s.serial} ${order(b?.order_id)?.code||''} ${b?.litre||''}`).toLocaleUpperCase('tr-TR').includes(q)}).map(s=>{const b=batch(s.batch_id);return `<tr><td>${esc(order(b?.order_id)?.code)}</td><td>${b?.litre||'—'} LT</td><td><b>${esc(s.serial)}</b></td><td>${writable()?`<select class="stage-select" data-stage="${s.id}">${options(STAGES.map(x=>[x,x]),s.stage)}</select>`:esc(s.stage)}</td><td>${fmt(s.updated_at)}</td></tr>`}).join('')||'<tr><td colspan="5">Kayıt bulunamadı.</td></tr>'}
+function showPage(p){if((p==='users'||p==='audit')&&!admin())return;page=p;$$('#menu [data-page]').forEach(x=>x.classList.toggle('active',x.dataset.page===p));const names={dashboard:'Genel Bakış',orders:'Sipariş Yönetimi',serials:'Seri No Takibi',board:'Üretim Panosu',users:'Kullanıcı Yönetimi',audit:'İşlem Geçmişi'};$('#title').textContent=names[p];$$('section#dashboard,section#orders,section#serials,section#board,section#users,section#audit').forEach(x=>x.classList.toggle('hidden',x.id!==p))}
+async function mutation(fn){if(!writable())throw Error('Bu işlem için yetkiniz yok.');await fn();await refresh();toast('Kayıt başarıyla güncellendi.')}
+async function submitForm(form){const fd=new FormData(form),obj=Object.fromEntries(fd.entries());switch(form.id){case 'orderForm':case 'quickOrder':await mutation(async()=>{check(await sb.from('orders').insert({code:obj.code.trim().toUpperCase()}))});$('#modal').close();break;
+case 'renameForm':await mutation(async()=>check(await sb.from('orders').update({code:obj.code.trim().toUpperCase()}).eq('id',Number(obj.id))));break;
+case 'batchForm':{const rec={order_id:Number(obj.order_id),litre:Number(obj.litre),target:Number(obj.target),start_date:obj.start_date||null,end_date:obj.end_date||null};if(rec.start_date&&rec.end_date&&rec.end_date<rec.start_date)throw Error('Bitiş tarihi başlangıçtan önce olamaz.');await mutation(async()=>check(await sb.from('batches').upsert(rec,{onConflict:'order_id,litre'})));break}
+case 'serialForm':await mutation(async()=>check(await sb.from('serials').insert({batch_id:Number(obj.batch_id),serial:obj.serial.trim().toUpperCase(),stage:obj.stage})));break;}}
+function exportCSV(){const rows=[['Sipariş','Litre','Plan','Başlangıç','Bitiş','Seri No','Proses','Son Güncelleme']];for(const s of state.serials){const b=batch(s.batch_id);rows.push([order(b?.order_id)?.code||'',b?.litre||'',b?.target||'',b?.start_date||'',b?.end_date||'',s.serial,s.stage,s.updated_at||''])}const csv='\ufeff'+rows.map(r=>r.map(x=>'"'+String(x).replaceAll('"','""')+'"').join(';')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='CBS_Uretim_Raporu.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),500)}
+document.addEventListener('submit',async e=>{const form=e.target;if(form.id==='setupForm'){e.preventDefault();const url=$('#supabaseUrl').value.trim(),key=$('#supabaseKey').value.trim();if(!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url)){err(Error('Supabase proje URL adresini kontrol edin.'));return}localStorage.setItem('cbs_url',url.replace(/\/$/,''));localStorage.setItem('cbs_key',key);location.reload();return}if(form.id==='loginForm'){e.preventDefault();$('#loginError').textContent='';try{const result=await sb.auth.signInWithPassword({email:$('#email').value.trim(),password:$('#password').value});const d=check(result);await enter(d.session)}catch(ex){$('#loginError').textContent=ex.message}return}if(form.id==='inviteForm'){e.preventDefault();if(!admin()){err(Error('Yalnızca yöneticiler kullanıcı davet edebilir.'));return}const fd=new FormData(form);const email=String(fd.get('email')||'').trim().toLowerCase(),role=String(fd.get('role')||'viewer');if(!/^[^\s@]+@cukurovabombe\.com$/i.test(email)){err(Error('Yalnızca @cukurovabombe.com adresleri kullanılabilir.'));return}try{const {data,error}=await sb.functions.invoke('cbs-invite-user',{body:{email,role}});if(error)throw error;if(!data?.ok)throw Error(data?.error||'Davet gönderilemedi.');form.reset();await refresh();toast('Davet gönderildi. Personelin e-postasını kontrol edin.')}catch(ex){err(ex)}return}if(['orderForm','quickOrder','renameForm','batchForm','serialForm'].includes(form.id)){e.preventDefault();try{await submitForm(form)}catch(ex){err(ex)}}});
+document.addEventListener('click',async e=>{const nav=e.target.closest('[data-page]');if(nav){showPage(nav.dataset.page);return}if(e.target.closest('#newOrder')){$('#modal').showModal();return}if(e.target.closest('#close')){$('#modal').close();return}if(e.target.closest('#reload')){try{await refresh();toast('Veriler yenilendi.')}catch(ex){err(ex)}return}if(e.target.closest('#export')){exportCSV();return}if(e.target.closest('#logout')){await sb.auth.signOut();loginScreen();return}const save=e.target.closest('[data-saveuser]');if(save&&admin()){const id=save.dataset.saveuser;if(id===profile.id)return;const role=document.querySelector(`[data-role="${id}"]`).value;const active=document.querySelector(`[data-active="${id}"]`).checked;try{check(await sb.from('profiles').update({role,active}).eq('id',id));await refresh();toast('Kullanıcı yetkisi güncellendi.')}catch(ex){err(ex)}}});
+document.addEventListener('input',e=>{if(e.target.id==='searchSerial')renderSerialRows()});
+document.addEventListener('change',async e=>{const sel=e.target.closest('[data-stage]');if(!sel)return;const s=state.serials.find(x=>x.id===Number(sel.dataset.stage));if(!s)return;try{await mutation(async()=>check(await sb.from('serials').update({stage:sel.value,updated_at:new Date().toISOString()}).eq('id',s.id)))}catch(ex){sel.value=s.stage;err(ex)}});
+boot();
