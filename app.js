@@ -11,7 +11,29 @@ function err(e){toast(e?.message||String(e))}
 function check({error,data}){if(error)throw error;return data}
 function initClient(){const cfg=window.CBS_CONFIG||{};const url=cfg.supabaseUrl||localStorage.getItem('cbs_url');const key=cfg.supabaseAnonKey||localStorage.getItem('cbs_key');if(!url||!key){$('#setup').classList.remove('hidden');return false}if(!window.supabase?.createClient){$('#setup').classList.remove('hidden');toast('Supabase kütüphanesi yüklenemedi; internet bağlantısını kontrol edin.');return false}sb=window.supabase.createClient(url,key,{auth:{persistSession:true,autoRefreshToken:true}});return true}
 function loginScreen(){session=null;profile=null;$('#app').classList.add('hidden');$('#login').classList.remove('hidden')}
-async function boot(){if(!initClient())return;try{const {data:{session:s},error}=await sb.auth.getSession();if(error)throw error;if(s)await enter(s);else loginScreen()}catch(e){loginScreen();err(e)}}
+
+async function boot() {
+  if (!initClient()) return;
+
+  try {
+    const { data: { session: s }, error } =
+      await sb.auth.getSession();
+
+    if (error) throw error;
+
+    if (await handleInvitation()) return;
+
+    if (s) {
+      await enter(s);
+    } else {
+      loginScreen();
+    }
+  } catch (e) {
+    loginScreen();
+    err(e);
+  }
+}
+
 async function enter(s){session=s;const p=check(await sb.from('profiles').select('id,email,role,active').eq('id',s.user.id).maybeSingle());if(!p||!p.active) {await sb.auth.signOut();loginScreen();throw Error('Hesabınız aktif değil. Yöneticinize başvurun.')}profile=p;$('#login').classList.add('hidden');$('#setup').classList.add('hidden');$('#app').classList.remove('hidden');$('#who').textContent=p.email;$('#userEmail').textContent=p.email;$('#roleLabel').textContent=({admin:'Yönetici',editor:'Yetkili Personel',viewer:'Görüntüleyici'})[p.role];$('#usersNav').hidden=!admin();$('#auditNav').hidden=!admin();$('#newOrder').hidden=!writable();const processNav=document.querySelector('#menu [data-page="serials"]');if(processNav)processNav.textContent='⚙ Proses Takibi';await refresh();showPage('dashboard')}
 async function refresh(){if(!session)return;const [o,b,s,p]=await Promise.all([sb.from('orders').select('*').order('id',{ascending:false}),sb.from('batches').select('*').order('id',{ascending:false}),sb.from('serials').select('*').order('id',{ascending:false}),sb.from('process_tracking').select('*')]);state.orders=check(o);state.batches=check(b);state.serials=check(s);state.processes=check(p);if(admin()){state.profiles=check(await sb.from('profiles').select('id,email,role,active,created_at').order('created_at'));state.history=check(await sb.from('production_history').select('*').order('created_at',{ascending:false}).limit(1000))}render()}
 const isActiveOrder=id=>!order(id)?.archived_at;
