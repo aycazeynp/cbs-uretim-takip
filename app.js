@@ -177,3 +177,45 @@ document.addEventListener('submit', async e => {
 });
 
 boot();
+
+/* CBS - Tüm e-posta adresleri için yönetici daveti */
+document.addEventListener('submit', async function(event) {
+  const form = event.target;
+  if (form.id !== 'inviteForm') return;
+
+  event.preventDefault();
+  event.stopImmediatePropagation();
+
+  if (!admin()) {
+    err(Error('Yalnızca yöneticiler davet gönderebilir.'));
+    return;
+  }
+
+  const fd = new FormData(form);
+  const email = String(fd.get('email') || '').trim().toLowerCase();
+  const role = String(fd.get('role') || 'viewer');
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    err(Error('Geçerli bir e-posta adresi girin.'));
+    return;
+  }
+
+  try {
+    const { data, error } = await sb.functions.invoke(
+      'cbs-invite-user',
+      { body: { email, role } }
+    );
+
+    if (error) throw error;
+    if (!data?.ok) {
+      throw Error(data?.error || 'Davet gönderilemedi.');
+    }
+
+    form.reset();
+    await refresh();
+    toast('Davet gönderildi. E-posta kutusunu kontrol edin.');
+  } catch (ex) {
+    err(ex);
+  }
+}, true);
+
