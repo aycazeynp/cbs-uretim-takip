@@ -12,8 +12,13 @@ function toast(s){const t=$('#toast');t.textContent=s;t.classList.add('show');se
 function err(e){toast(e?.message||String(e))}
 function check({error,data}){if(error)throw error;return data}
 function initClient(){const cfg=window.CBS_CONFIG||{};const url=cfg.supabaseUrl||localStorage.getItem('cbs_url');const key=cfg.supabaseAnonKey||localStorage.getItem('cbs_key');if(!url||!key){$('#setup').classList.remove('hidden');return false}if(!window.supabase?.createClient){$('#setup').classList.remove('hidden');toast('Supabase kütüphanesi yüklenemedi; internet bağlantısını kontrol edin.');return false}sb=window.supabase.createClient(url,key,{auth:{persistSession:true,autoRefreshToken:true}});return true}
-function loginScreen(){session=null;profile=null;$('#app').classList.add('hidden');$('#login').classList.remove('hidden')}
+function loginScreen(){session=null;profile=null;$('#app').classList.add('hidden');$('#setPassword').classList.add('hidden');$('#passwordHelp').classList.add('hidden');$('#login').classList.remove('hidden')}
 
+function showSetPassword(firstLogin=false){
+  $('#login').classList.add('hidden'); $('#passwordHelp').classList.add('hidden');
+  $('#app').classList.add('hidden'); $('#setPassword').classList.remove('hidden');
+  const h=$('#setPassword h1'); if(h) h.textContent=firstLogin?'İlk Giriş: Kendi Şifrenizi Belirleyin':'Yeni Şifrenizi Oluşturun';
+}
 async function boot() {
   if (!initClient()) return;
 
@@ -24,6 +29,7 @@ async function boot() {
     if (error) throw error;
 
     if (await handleInvitation()) return;
+    if (s?.user?.app_metadata?.cbs_must_change_password) { showSetPassword(true); return; }
 
     if (s) {
       await enter(s);
@@ -36,7 +42,7 @@ async function boot() {
   }
 }
 
-async function enter(s){session=s;const p=check(await sb.from('profiles').select('id,email,role,active').eq('id',s.user.id).maybeSingle());if(!p||!p.active) {await sb.auth.signOut();loginScreen();throw Error('Hesabınız aktif değil. Yöneticinize başvurun.')}profile=p;$('#login').classList.add('hidden');$('#setup').classList.add('hidden');$('#app').classList.remove('hidden');$('#who').textContent=p.email;$('#userEmail').textContent=p.email;$('#roleLabel').textContent=({admin:'Yönetici',editor:'Yetkili Personel',viewer:'Görüntüleyici'})[p.role];$('#usersNav').hidden=!admin();$('#auditNav').hidden=!admin();$('#newOrder').hidden=!writable();const processNav=document.querySelector('#menu [data-page="serials"]');if(processNav)processNav.textContent='⚙ Proses Takibi';await refresh();showPage('dashboard')}
+async function enter(s){if(s?.user?.app_metadata?.cbs_must_change_password){showSetPassword(true);return;}session=s;const p=check(await sb.from('profiles').select('id,email,role,active').eq('id',s.user.id).maybeSingle());if(!p||!p.active) {await sb.auth.signOut();loginScreen();throw Error('Hesabınız aktif değil. Yöneticinize başvurun.')}profile=p;$('#login').classList.add('hidden');$('#setup').classList.add('hidden');$('#app').classList.remove('hidden');$('#who').textContent=p.email;$('#userEmail').textContent=p.email;$('#roleLabel').textContent=({admin:'Yönetici',editor:'Yetkili Personel',viewer:'Görüntüleyici'})[p.role];$('#usersNav').hidden=!admin();$('#auditNav').hidden=!admin();$('#newOrder').hidden=!writable();const processNav=document.querySelector('#menu [data-page="serials"]');if(processNav)processNav.textContent='⚙ Proses Takibi';await refresh();showPage('dashboard')}
 async function refresh(){if(!session)return;const [o,b,s,p]=await Promise.all([sb.from('orders').select('*').order('id',{ascending:false}),sb.from('batches').select('*').order('id',{ascending:false}),sb.from('serials').select('*').order('id',{ascending:false}),sb.from('process_tracking').select('*')]);state.orders=check(o);state.batches=check(b);state.serials=check(s);state.processes=check(p);if(admin()){state.profiles=check(await sb.from('profiles').select('id,email,role,active,created_at').order('created_at'));state.history=check(await sb.from('production_history').select('*').order('created_at',{ascending:false}).limit(1000))}render()}
 const isActiveOrder=id=>!order(id)?.archived_at;
 const activeBatches=()=>state.batches.filter(b=>isActiveOrder(b.order_id));
@@ -124,6 +130,19 @@ function exportBoardPDF(){
   </style></head><body><header><h1>ÇUKUROVA BOMBE SANAYİ</h1><p>Üretim Panosu Raporu · ${esc(now)}</p></header>${content.outerHTML}<footer>Üretim Panosu · Görüntülenen aktif üretim grupları</footer><script>window.addEventListener('load',()=>{setTimeout(()=>window.print(),250)});<\/script></body></html>`;
   win.document.open();win.document.write(html);win.document.close();
 }
+function showTemporaryPassword(email,password){
+  const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;z-index:100000;background:#000b;display:flex;align-items:center;justify-content:center;padding:20px';
+  const panel=document.createElement('div');panel.style.cssText='background:#14263b;color:white;border-radius:16px;padding:26px;width:min(460px,100%);box-shadow:0 20px 60px #0009';
+  const title=document.createElement('h2');title.textContent='Personel hesabı oluşturuldu';
+  const description=document.createElement('p');description.textContent='Bu geçici şifre yalnızca şimdi gösterilir. Güvenli şekilde personele iletin.';
+  const details=document.createElement('p');details.style.cssText='overflow-wrap:anywhere;line-height:1.8';
+  const emailLabel=document.createElement('strong');emailLabel.textContent=email;
+  const pass=document.createElement('code');pass.textContent=password;pass.style.cssText='display:block;background:#263e54;padding:12px;border-radius:8px;font-size:18px;user-select:all;margin-top:8px';
+  details.append(emailLabel,pass);
+  const copy=document.createElement('button');copy.type='button';copy.className='btn';copy.textContent='Şifreyi Kopyala';copy.onclick=async()=>{try{await navigator.clipboard.writeText(password);copy.textContent='Kopyalandı ✓'}catch(_){toast('Şifreyi seçip kopyalayın.')}};
+  const close=document.createElement('button');close.type='button';close.className='btn secondary';close.textContent='Kapattım';close.style.marginLeft='10px';close.onclick=()=>overlay.remove();
+  panel.append(title,description,details,copy,close);overlay.append(panel);document.body.append(overlay);
+}
 function exportCSV(){const rows=[['Sipariş','Litre','Basınç (BAR)','Plan','Başlangıç','Bitiş','Proses','Ulaşan Adet','Bu Aşamada Bekleyen','İlerleme %']];for(const b of activeBatches()){const q=quantities(b);STAGES.forEach((st,i)=>rows.push([order(b.order_id)?.code||'',b.litre,bar(b),b.target,b.start_date||'',b.end_date||'',st,q[i],i===STAGES.length-1?'':waiting(b,i),progress(b)]))}const csv='\ufeff'+rows.map(r=>r.map(x=>'"'+String(x).replaceAll('"','""')+'"').join(';')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='CBS_Proses_Takip_Raporu.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),500)}
 document.addEventListener('submit',async e=>{const form=e.target;if(form.id==='setupForm'){e.preventDefault();const url=$('#supabaseUrl').value.trim(),key=$('#supabaseKey').value.trim();if(!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url)){err(Error('Supabase proje URL adresini kontrol edin.'));return}localStorage.setItem('cbs_url',url.replace(/\/$/,''));localStorage.setItem('cbs_key',key);location.reload();return}if(form.id==='loginForm'){e.preventDefault();$('#loginError').textContent='';try{const result=await sb.auth.signInWithPassword({email:$('#email').value.trim(),password:$('#password').value});const d=check(result);await enter(d.session)}catch(ex){$('#loginError').textContent=ex.message}return}if(form.id==='inviteForm'){e.preventDefault();if(!admin()){err(Error('Yalnızca yöneticiler kullanıcı davet edebilir.'));return}const fd=new FormData(form);const email=String(fd.get('email')||'').trim().toLowerCase(),role=String(fd.get('role')||'viewer');if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(email)){err(Error('Geçerli bir e-posta adresi girin.'));return}const btn=form.querySelector('button[type=submit]');
   if(btn){btn.disabled=true;btn.textContent='Davet gönderiliyor...'}
@@ -137,7 +156,10 @@ document.addEventListener('submit',async e=>{const form=e.target;if(form.id==='s
       throw Error(message);
     }
     if(!data?.ok)throw Error(data?.error||'Davet gönderilemedi.');
-    form.reset();toast('Davet gönderildi. Personelin e-postasını kontrol edin.');
+    form.reset();
+    const temp=data.temporaryPassword;
+    if(!temp) throw Error('Kullanıcı oluşturuldu fakat geçici şifre alınamadı.');
+    showTemporaryPassword(email,temp);
     try{await refresh()}catch(refreshError){console.warn('Davet gönderildi fakat liste yenilenemedi:',refreshError)}
   }catch(ex){
     err(ex);
@@ -153,7 +175,7 @@ async function handleInvitation() {
   const hash = new URLSearchParams(location.hash.slice(1));
   const query = new URLSearchParams(location.search);
 
-  const isInvite = hash.get('type') === 'invite' ||
+  const isInvite = hash.get('type') === 'recovery' || query.get('type') === 'recovery' || hash.get('type') === 'invite' ||
                    query.get('type') === 'invite' ||
                    hash.has('access_token') ||
                    query.has('token_hash');
@@ -165,9 +187,7 @@ async function handleInvitation() {
 
   if (!inviteSession) return false;
 
-  document.querySelector('#login').classList.add('hidden');
-  document.querySelector('#app').classList.add('hidden');
-  document.querySelector('#setPassword').classList.remove('hidden');
+  showSetPassword(!!inviteSession.user?.app_metadata?.cbs_must_change_password);
   return true;
 }
 
@@ -186,8 +206,15 @@ document.addEventListener('submit', async e => {
   }
 
   try {
-    const { error } = await sb.auth.updateUser({ password });
-    if (error) throw error;
+    const firstLogin = !!(await sb.auth.getUser()).data.user?.app_metadata?.cbs_must_change_password;
+    if (firstLogin) {
+      const { data, error } = await sb.functions.invoke('cbs-invite-user', { body: { action: 'complete_first_login', newPassword: password } });
+      if (error || !data?.ok) throw Error(data?.error || error?.message || 'Şifre güncellenemedi.');
+      await sb.auth.refreshSession();
+    } else {
+      const { error } = await sb.auth.updateUser({ password });
+      if (error) throw error;
+    }
 
     history.replaceState(null, '', location.pathname);
     document.querySelector('#setPassword').classList.add('hidden');
@@ -233,4 +260,30 @@ document.addEventListener('submit', async function(e) {
     button.disabled = false;
     button.textContent = 'Şifre Bağlantısı Gönder';
   }
+});
+
+// Oturum açmış personelin şifresini değiştirme ekranı
+function showAccountPassword(){
+  const panel=$('#accountPasswordPanel'); if(!panel)return;
+  panel.classList.remove('hidden'); $('#accountPasswordError').textContent='';
+  panel.scrollIntoView({behavior:'smooth',block:'center'});
+}
+document.addEventListener('click',e=>{
+  if(e.target.closest('#changeMyPassword')){showAccountPassword();return}
+  if(e.target.closest('#cancelAccountPassword')){$('#accountPasswordPanel').classList.add('hidden');return}
+});
+document.addEventListener('submit',async e=>{
+  if(e.target.id!=='accountPasswordForm')return;
+  e.preventDefault();
+  const box=$('#accountPasswordError');box.textContent='';
+  const old=$('#accountOldPassword').value, next=$('#accountNewPassword').value, repeat=$('#accountRepeatPassword').value;
+  if(next.length<8||next!==repeat){box.textContent='Yeni şifre en az 8 karakter olmalı ve tekrar ile eşleşmeli.';return}
+  const button=e.target.querySelector('button[type=submit]');button.disabled=true;
+  try{
+    const user=check(await sb.auth.getUser()).user;
+    check(await sb.auth.signInWithPassword({email:user.email,password:old}));
+    check(await sb.auth.updateUser({password:next}));
+    e.target.reset();$('#accountPasswordPanel').classList.add('hidden');toast('Şifreniz değiştirildi.');
+  }catch(ex){box.textContent=ex.message||'Şifre değiştirilemedi.'}
+  finally{button.disabled=false}
 });
