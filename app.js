@@ -104,4 +104,54 @@ function exportCSV(){const rows=[['Sipariş','Litre','Basınç (BAR)','Plan','Ba
 document.addEventListener('submit',async e=>{const form=e.target;if(form.id==='setupForm'){e.preventDefault();const url=$('#supabaseUrl').value.trim(),key=$('#supabaseKey').value.trim();if(!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url)){err(Error('Supabase proje URL adresini kontrol edin.'));return}localStorage.setItem('cbs_url',url.replace(/\/$/,''));localStorage.setItem('cbs_key',key);location.reload();return}if(form.id==='loginForm'){e.preventDefault();$('#loginError').textContent='';try{const result=await sb.auth.signInWithPassword({email:$('#email').value.trim(),password:$('#password').value});const d=check(result);await enter(d.session)}catch(ex){$('#loginError').textContent=ex.message}return}if(form.id==='inviteForm'){e.preventDefault();if(!admin()){err(Error('Yalnızca yöneticiler kullanıcı davet edebilir.'));return}const fd=new FormData(form);const email=String(fd.get('email')||'').trim().toLowerCase(),role=String(fd.get('role')||'viewer');if(!/^[^\s@]+@cukurovabombe\.com$/i.test(email)){err(Error('Yalnızca @cukurovabombe.com adresleri kullanılabilir.'));return}try{const {data,error}=await sb.functions.invoke('cbs-invite-user',{body:{email,role}});if(error)throw error;if(!data?.ok)throw Error(data?.error||'Davet gönderilemedi.');form.reset();await refresh();toast('Davet gönderildi. Personelin e-postasını kontrol edin.')}catch(ex){err(ex)}return}if(['orderForm','quickOrder','renameForm','batchForm','serialForm','processForm'].includes(form.id)){e.preventDefault();try{await submitForm(form)}catch(ex){err(ex)}}});
 document.addEventListener('click',async e=>{const nav=e.target.closest('[data-page]');if(nav){showPage(nav.dataset.page);return}if(e.target.closest('#newOrder')){$('#modal').showModal();return}if(e.target.closest('#close')){$('#modal').close();return}if(e.target.closest('#reload')){try{await refresh();toast('Veriler yenilendi.')}catch(ex){err(ex)}return}if(e.target.closest('#historyAll')){historyDate='';const input=$('#historyDate');if(input)input.value='';const rows=$('#historyRows');if(rows)rows.innerHTML=historyTable();return}if(e.target.closest('#boardPdf')){exportBoardPDF();return}if(e.target.closest('#export')){exportCSV();return}if(e.target.closest('#logout')){await sb.auth.signOut();loginScreen();return}const action=e.target.closest('[data-archive-order],[data-restore-order],[data-del-order],[data-del-batch],[data-del-serial]');if(action){if(!admin()){err(Error('Yalnızca yöneticiler bu işlemi yapabilir.'));return}try{const ds=action.dataset;let table,id,verb,label,body=null;if(ds.archiveOrder){table='orders';id=Number(ds.archiveOrder);verb='arşivle';label=order(id)?.code;body={archived_at:new Date().toISOString()}}else if(ds.restoreOrder){table='orders';id=Number(ds.restoreOrder);verb='geri yükle';label=order(id)?.code;body={archived_at:null}}else if(ds.delOrder){table='orders';id=Number(ds.delOrder);verb='sil';label=order(id)?.code;}else if(ds.delBatch){table='batches';id=Number(ds.delBatch);verb='sil';const b=batch(id);label=`${order(b?.order_id)?.code} / ${b?.litre} LT / ${bar(b)} BAR`;}else{table='serials';id=Number(ds.delSerial);verb='sil';label=state.serials.find(s=>s.id===id)?.serial}if(!Number.isFinite(id)||!label)throw Error('Kayıt bulunamadı.');if(!await cbsConfirm(verb==='sil'?`${label} kaydını silmek istediğinize emin misiniz? Bağlı üretim grupları, proses adetleri ve seri numaraları da silinebilir. Bu işlem geri alınamaz.`:`${label} kaydını ${verb==='arşivle'?'arşivlemek':'geri yüklemek'} istediğinize emin misiniz?`))return;let q=body?sb.from(table).update(body).eq('id',id):sb.from(table).delete().eq('id',id);check(await q.select('id').single());if(table!=='serials')await logHistory({code:table==='orders'?label:order(batch(id)?.order_id)?.code||label,action:table==='orders'?(verb==='sil'?'Sipariş silindi':verb==='arşivle'?'Sipariş arşivlendi':'Sipariş geri yüklendi'):'Üretim grubu silindi'});await refresh();toast(`İşlem başarılı: ${label}`)}catch(ex){err(ex)}return}const save=e.target.closest('[data-saveuser]');if(save&&admin()){const id=save.dataset.saveuser;if(id===profile.id)return;const role=document.querySelector(`[data-role="${id}"]`).value;const active=document.querySelector(`[data-active="${id}"]`).checked;try{check(await sb.from('profiles').update({role,active}).eq('id',id));await refresh();toast('Kullanıcı yetkisi güncellendi.')}catch(ex){err(ex)}}});
 document.addEventListener('change',async e=>{if(e.target.id==='historyDate'){historyDate=e.target.value;$('#historyRows').innerHTML=historyTable();return}const sel=e.target.closest('[data-stage]');if(!sel)return;const s=state.serials.find(x=>x.id===Number(sel.dataset.stage));if(!s)return;try{await mutation(async()=>check(await sb.from('serials').update({stage:sel.value,updated_at:new Date().toISOString()}).eq('id',s.id)))}catch(ex){sel.value=s.stage;err(ex)}});
+
+async function handleInvitation() {
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const query = new URLSearchParams(location.search);
+
+  const isInvite = hash.get('type') === 'invite' ||
+                   query.get('type') === 'invite' ||
+                   hash.has('access_token') ||
+                   query.has('token_hash');
+
+  if (!isInvite) return false;
+
+  const { data: { session: inviteSession } } =
+    await sb.auth.getSession();
+
+  if (!inviteSession) return false;
+
+  document.querySelector('#login').classList.add('hidden');
+  document.querySelector('#app').classList.add('hidden');
+  document.querySelector('#setPassword').classList.remove('hidden');
+  return true;
+}
+
+document.addEventListener('submit', async e => {
+  if (e.target.id !== 'setPasswordForm') return;
+  e.preventDefault();
+
+  const password = document.querySelector('#newPassword').value;
+  const confirm = document.querySelector('#confirmPassword').value;
+  const errorBox = document.querySelector('#setPasswordError');
+  errorBox.textContent = '';
+
+  if (password !== confirm) {
+    errorBox.textContent = 'Şifreler eşleşmiyor.';
+    return;
+  }
+
+  try {
+    const { error } = await sb.auth.updateUser({ password });
+    if (error) throw error;
+
+    history.replaceState(null, '', location.pathname);
+    document.querySelector('#setPassword').classList.add('hidden');
+    toast('Şifreniz oluşturuldu. Hoş geldiniz!');
+    await enter((await sb.auth.getSession()).data.session);
+  } catch (error) {
+    errorBox.textContent = error.message;
+  }
+});
+
 boot();
