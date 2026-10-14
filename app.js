@@ -4,6 +4,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const STAGES=['KESİM','PRES','KORDON','BÜKÜM','DOĞRULTMA','GÖVDE KAYNAK','MONTAJ','ÇEVRE KAYNAK','FİTTİNGS KAYNAK','KULAK KULP KAYNAK','TANK TEMİZLİK','HİDROSTATİK TEST','BOYA','PAKETLEME','SEVKİYAT'];
 const LITRES=[5,9,26,45,83,149,180,267];
 let sb=null,session=null,profile=null,page='dashboard';
+const cbsRecoveryOnArrival = new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery' || new URLSearchParams(location.search).get('type') === 'recovery';
 const cbsInviteOnArrival = new URLSearchParams(location.hash.slice(1)).get('type') === 'invite' || new URLSearchParams(location.search).get('type') === 'invite';
 let state={orders:[],batches:[],serials:[],profiles:[],audit:[],processes:[],history:[]};
 const writable=()=>['admin','editor'].includes(profile?.role),admin=()=>profile?.role==='admin';
@@ -157,7 +158,7 @@ async function handleInvitation() {
                    hash.has('access_token') ||
                    query.has('token_hash');
 
-  if (!isInvite && !cbsInviteOnArrival) return false;
+  if (!isInvite && !cbsInviteOnArrival && !cbsRecoveryOnArrival) return false;
 
   const { data: { session: inviteSession } } =
     await sb.auth.getSession();
@@ -198,3 +199,38 @@ document.addEventListener('submit', async e => {
 });
 
 boot();
+
+// CBS: Giriş ekranından yalnızca davetli kullanıcılar için şifre oluşturma/yenileme.
+document.addEventListener('click', function(e) {
+  if (e.target.closest('#showPasswordHelp')) {
+    document.querySelector('#login').classList.add('hidden');
+    document.querySelector('#passwordHelp').classList.remove('hidden');
+    document.querySelector('#passwordHelpEmail').value = document.querySelector('#email')?.value || '';
+  }
+  if (e.target.closest('#backToLogin')) {
+    document.querySelector('#passwordHelp').classList.add('hidden');
+    document.querySelector('#login').classList.remove('hidden');
+  }
+});
+document.addEventListener('submit', async function(e) {
+  if (e.target.id !== 'passwordHelpForm') return;
+  e.preventDefault();
+  const message = document.querySelector('#passwordHelpMessage');
+  const email = document.querySelector('#passwordHelpEmail').value.trim();
+  const button = e.target.querySelector('button[type="submit"]');
+  message.textContent = '';
+  button.disabled = true;
+  button.textContent = 'Gönderiliyor...';
+  try {
+    const { error } = await sb.auth.resetPasswordForEmail(email, {
+      redirectTo: location.origin + location.pathname
+    });
+    if (error) throw error;
+    message.textContent = 'Bu adres için hesap varsa şifre oluşturma bağlantısı gönderildi. Gelen kutunu ve spam klasörünü kontrol et.';
+  } catch (ex) {
+    message.textContent = ex.message || 'Bağlantı gönderilemedi.';
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Şifre Bağlantısı Gönder';
+  }
+});
