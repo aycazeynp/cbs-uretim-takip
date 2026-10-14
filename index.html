@@ -1,6 +1,30 @@
 <!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CBS | Production Management</title><link rel="stylesheet" href="style.css"></head><body>
 <section id="setup" class="authwrap hidden"><div class="authbox"><div class="brand dark">CBS<small>PRODUCTION SYSTEM</small></div><h1>İlk bağlantı ayarı</h1><p>Supabase proje URL ve <b>publishable/anon</b> anahtarını girin. <b>service_role veya secret key girmeyin.</b></p><form id="setupForm"><label>Supabase Project URL<input id="supabaseUrl" type="url" placeholder="https://xxxx.supabase.co" required></label><label>Publishable / anon key<input id="supabaseKey" required autocomplete="off"></label><button class="btn">Bağlantıyı Kaydet</button></form><p class="muted small">Bu ayar bu tarayıcıda saklanır. Yayına almadan önce config.js dosyasına yazın.</p></div></section>
 <section id="login" class="authwrap hidden"><div class="authbox"><div class="brand dark">CBS<small>PRODUCTION SYSTEM</small></div><h1>Üretim Yönetim Sistemi</h1><p>Çukurova Bombe Sanayi · Yetkili personel girişi</p><form id="loginForm"><label>E-posta<input id="email" type="email" autocomplete="username" required></label><label>Şifre<input id="password" type="password" autocomplete="current-password" required></label><button class="btn">Giriş Yap →</button></form><p id="loginError" class="error" role="alert"></p></div></section>
-<div id="app" class="layout hidden"><aside class="side"><div class="brand">CBS<small>PRODUCTION SYSTEM</small></div><div class="divider"></div><nav class="menu" id="menu"><button class="active" data-page="dashboard">◫ &nbsp; Genel Bakış</button><button data-page="orders">▤ &nbsp; Sipariş Yönetimi</button><button data-page="serials">▦ &nbsp; Seri No Takibi</button><button data-page="board">▣ &nbsp; Üretim Panosu</button><button data-page="users" id="usersNav">♙ &nbsp; Kullanıcı Yönetimi</button><button data-page="audit" id="auditNav">◷ &nbsp; İşlem Geçmişi</button></nav><div class="foot"><b id="who">CBS</b><span id="roleLabel"></span><button class="footbtn" id="logout">Çıkış Yap</button></div></aside><div class="main"><header class="top"><div><div class="crumb">CBS / PRODUCTION MANAGEMENT</div><h1 id="title">Genel Bakış</h1></div><div class="user"><span id="userEmail"></span><div class="avatar">CBS</div></div></header><div class="content"><div class="intro"><p id="subtitle">Üretim operasyonlarını tek ekrandan yönetin.</p><div><button class="btn secondary" id="export">↓ CSV Raporu</button> <button class="btn secondary" id="reload">↻ Yenile</button> <button class="btn" id="newOrder">+ Yeni Sipariş</button></div></div><section id="dashboard"></section><section id="orders" class="hidden"></section><section id="serials" class="hidden"></section><section id="board" class="hidden"></section><section id="users" class="hidden"></section><section id="audit" class="hidden"></section></div></div></div>
+
+<section id="setPassword" class="authwrap hidden">
+  <div class="authbox">
+    <div class="brand dark">
+      CBS<small>PRODUCTION SYSTEM</small>
+    </div>
+    <h1>Şifrenizi Oluşturun</h1>
+    <p>Çukurova Bombe Sanayi üretim sistemine hoş geldiniz.</p>
+    <form id="setPasswordForm">
+      <label>
+        Yeni Şifre
+        <input id="newPassword" type="password"
+               minlength="8" autocomplete="new-password" required>
+      </label>
+      <label>
+        Şifre Tekrar
+        <input id="confirmPassword" type="password"
+               minlength="8" autocomplete="new-password" required>
+      </label>
+      <button class="btn" type="submit">Şifremi Kaydet</button>
+    </form>
+    <p id="setPasswordError" class="error" role="alert"></p>
+  </div>
+</section>
+ <div id="app" class="layout hidden"><aside class="side"><div class="brand">CBS<small>PRODUCTION SYSTEM</small></div><div class="divider"></div><nav class="menu" id="menu"><button class="active" data-page="dashboard">◫ &nbsp; Genel Bakış</button><button data-page="orders">▤ &nbsp; Sipariş Yönetimi</button><button data-page="serials">▦ &nbsp; Seri No Takibi</button><button data-page="board">▣ &nbsp; Üretim Panosu</button><button data-page="users" id="usersNav">♙ &nbsp; Kullanıcı Yönetimi</button><button data-page="audit" id="auditNav">◷ &nbsp; İşlem Geçmişi</button></nav><div class="foot"><b id="who">CBS</b><span id="roleLabel"></span><button class="footbtn" id="logout">Çıkış Yap</button></div></aside><div class="main"><header class="top"><div><div class="crumb">CBS / PRODUCTION MANAGEMENT</div><h1 id="title">Genel Bakış</h1></div><div class="user"><span id="userEmail"></span><div class="avatar">CBS</div></div></header><div class="content"><div class="intro"><p id="subtitle">Üretim operasyonlarını tek ekrandan yönetin.</p><div><button class="btn secondary" id="export">↓ CSV Raporu</button> <button class="btn secondary" id="reload">↻ Yenile</button> <button class="btn" id="newOrder">+ Yeni Sipariş</button></div></div><section id="dashboard"></section><section id="orders" class="hidden"></section><section id="serials" class="hidden"></section><section id="board" class="hidden"></section><section id="users" class="hidden"></section><section id="audit" class="hidden"></section></div></div></div>
 <dialog id="modal"><div class="head"><h2 style="margin:0">Yeni Sipariş</h2><button class="btn secondary" id="close" type="button">✕</button></div><p class="muted">Sipariş kodunu girerek üretim planına ekleyin.</p><form id="quickOrder" class="form" style="grid-template-columns:1fr"><label>Sipariş Kodu<input name="code" placeholder="CBS318" maxlength="40" required></label><button class="btn">Siparişi Kaydet</button></form></dialog><div id="toast" class="toast" role="status"></div>
 <script src="config.js"></script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script><script src="app.js" defer></script></body></html>
