@@ -19,30 +19,26 @@ function showSetPassword(firstLogin=false){
   $('#app').classList.add('hidden'); $('#setPassword').classList.remove('hidden');
   const h=$('#setPassword h1'); if(h) h.textContent=firstLogin?'İlk Giriş: Kendi Şifrenizi Belirleyin':'Yeni Şifrenizi Oluşturun';
 }
+// Supabase oturumunda saklanan kullanıcı bilgisi eski olabilir.
+// İlk giriş zorunluluğunu sunucudan güncel kullanıcı kaydıyla doğrula.
+async function mustChangePassword(s) {
+  if (!s?.user) return false;
+  const { data, error } = await sb.auth.getUser();
+  if (error) throw error;
+  return data.user?.app_metadata?.cbs_must_change_password === true;
+}
 async function boot() {
   if (!initClient()) return;
-
   try {
-    const { data: { session: s }, error } =
-      await sb.auth.getSession();
-
+    const { data: { session: s }, error } = await sb.auth.getSession();
     if (error) throw error;
-
     if (await handleInvitation()) return;
-    if (s?.user?.app_metadata?.cbs_must_change_password) { showSetPassword(true); return; }
-
-    if (s) {
-      await enter(s);
-    } else {
-      loginScreen();
-    }
-  } catch (e) {
-    loginScreen();
-    err(e);
-  }
+    if (s) await enter(s);
+    else loginScreen();
+  } catch (e) { loginScreen(); err(e); }
 }
 
-async function enter(s){if(s?.user?.app_metadata?.cbs_must_change_password){showSetPassword(true);return;}session=s;const p=check(await sb.from('profiles').select('id,email,role,active').eq('id',s.user.id).maybeSingle());if(!p||!p.active) {await sb.auth.signOut();loginScreen();throw Error('Hesabınız aktif değil. Yöneticinize başvurun.')}profile=p;$('#login').classList.add('hidden');$('#setup').classList.add('hidden');$('#app').classList.remove('hidden');$('#who').textContent=p.email;$('#userEmail').textContent=p.email;$('#roleLabel').textContent=({admin:'Yönetici',editor:'Yetkili Personel',viewer:'Görüntüleyici'})[p.role];$('#usersNav').hidden=!admin();$('#auditNav').hidden=!admin();$('#newOrder').hidden=!writable();const processNav=document.querySelector('#menu [data-page="serials"]');if(processNav)processNav.textContent='⚙ Proses Takibi';await refresh();showPage('dashboard')}
+async function enter(s){if(await mustChangePassword(s)){showSetPassword(true);return;}session=s;const p=check(await sb.from('profiles').select('id,email,role,active').eq('id',s.user.id).maybeSingle());if(!p||!p.active) {await sb.auth.signOut();loginScreen();throw Error('Hesabınız aktif değil. Yöneticinize başvurun.')}profile=p;$('#login').classList.add('hidden');$('#setup').classList.add('hidden');$('#app').classList.remove('hidden');$('#who').textContent=p.email;$('#userEmail').textContent=p.email;$('#roleLabel').textContent=({admin:'Yönetici',editor:'Yetkili Personel',viewer:'Görüntüleyici'})[p.role];$('#usersNav').hidden=!admin();$('#auditNav').hidden=!admin();$('#newOrder').hidden=!writable();const processNav=document.querySelector('#menu [data-page="serials"]');if(processNav)processNav.textContent='⚙ Proses Takibi';await refresh();showPage('dashboard')}
 async function refresh(){if(!session)return;const [o,b,s,p]=await Promise.all([sb.from('orders').select('*').order('id',{ascending:false}),sb.from('batches').select('*').order('id',{ascending:false}),sb.from('serials').select('*').order('id',{ascending:false}),sb.from('process_tracking').select('*')]);state.orders=check(o);state.batches=check(b);state.serials=check(s);state.processes=check(p);if(admin()){state.profiles=check(await sb.from('profiles').select('id,email,role,active,created_at').order('created_at'));state.history=check(await sb.from('production_history').select('*').order('created_at',{ascending:false}).limit(1000))}render()}
 const isActiveOrder=id=>!order(id)?.archived_at;
 const activeBatches=()=>state.batches.filter(b=>isActiveOrder(b.order_id));
@@ -219,7 +215,7 @@ async function handleInvitation() {
 
   if (!inviteSession) return false;
 
-  showSetPassword(!!inviteSession.user?.app_metadata?.cbs_must_change_password);
+  showSetPassword(await mustChangePassword(inviteSession));
   return true;
 }
 
