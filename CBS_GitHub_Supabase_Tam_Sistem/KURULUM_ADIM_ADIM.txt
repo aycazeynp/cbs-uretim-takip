@@ -1,0 +1,46 @@
+CBS PRODUCTION MANAGEMENT — GITHUB PAGES + SUPABASE
+===================================================
+Bu paket gerçek ortak veritabanı ve kullanıcı girişi içeren HTML tabanlı web uygulamasıdır.
+Mevcut Python/SQLite uygulamasından AYRIDIR; eski veriler otomatik aktarılmaz.
+
+ÖNEMLİ: Gerçek üretim verisi girmeden önce test edin ve yedekleme planı kurun.
+Ücretsiz planlar sınırlıdır ve ileride değişebilir. Sürekli erişim garantisi yoktur.
+
+1) https://supabase.com adresinden bir proje oluşturun.
+2) Supabase SQL Editor'da schema.sql dosyasının TAMAMINI çalıştırın.
+3) Authentication ayarlarında herkese açık yeni kullanıcı kaydını (sign ups) kapatın.
+4) Authentication > Users > Add user ile KENDİ e-posta hesabınızı oluşturun.
+   Geçici şifreyi güvenli bir şekilde belirleyin; şifreyi kod dosyalarına yazmayın.
+5) SQL Editor'da şu komutu KENDİ E-POSTANIZI yazarak çalıştırın:
+   update public.profiles set role='admin' where email='siz@ornek.com';
+   (Kullanıcı profilinin oluştuğunu kontrol edin. İlk kullanıcıyı oluşturmadan bu komut işe yaramaz.)
+6) Supabase > Project Settings > API / API Keys bölümünden
+   Project URL ve PUBLISHABLE/ANON KEY değerlerini alın.
+   config.js dosyasındaki boş iki alana bu değerleri yapıştırın.
+   ASLA service_role / secret key kullanmayın.
+7) GitHub'da yeni bir repository oluşturun (ör. cbs-uretim).
+   index.html, style.css, app.js, config.js dosyalarını kök dizine yükleyin.
+   schema.sql dosyasını isterseniz ÖZEL olarak saklayın; uygulamanın çalışması için GitHub'a yüklenmesi gerekmez.
+   Kullanıcı şifresi, veritabanı dosyası veya gerçek personel verisini repoya koymayın.
+8) GitHub > Settings > Pages > Build and deployment > Deploy from a branch
+   Branch: main, Folder: / (root), Save.
+   GitHub Pages bağlantısı birkaç dakika sonra görünür.
+9) Web adresini açın ve yönetici hesabınızla giriş yapın.
+10) Yeni çalışanlar için Supabase > Authentication > Users > Add user.
+    Her yeni hesap başlangıçta 'viewer' rolü alır.
+    CBS web uygulamasındaki Kullanıcı Yönetimi bölümünden yetkiyi değiştirin.
+11) Çalışanlarla yalnızca GitHub Pages bağlantısını paylaşın.
+
+GÜVENLİK VE SINIRLAR
+- Veritabanı erişimi RLS ile korunur; yalnızca oturum açmış aktif hesaplar veri görür.
+- Kullanıcı rolleri: admin, editor (yetkili personel), viewer.
+- Yeni kullanıcı oluşturma Supabase yönetim panelinden yapılır; bu uygulamadan
+  doğrudan kullanıcı oluşturulmaz (güvenli sunucu tarafı admin anahtarı gerekir).
+- Admin kendi hesabını uygulama içinden devre dışı bırakamaz.
+- Audit tablosu değişiklikleri veritabanı tetikleyicileriyle kaydeder.
+- Supabase ücretsiz projeleri etkinlik yoksa duraklatabilir; kotaları vardır.
+- GitHub Pages statik dosyaları herkese açıktır; hassas anahtar veya veri yüklemeyin.
+- Uygulama şu an seri bazında TEK güncel proses tutar; tam proses geçmişi tutmaz.
+- SQLite'dan mevcut kayıtların aktarımı bu pakete dahil değildir.
+- Kullanıcı hesaplarını e-posta ile davet etmek için Supabase SMTP/e-posta kısıtları olabilir.
+- İnternette yayımlamadan önce şirketinizin veri güvenliği politikasına uygunluğu değerlendirin.
