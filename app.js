@@ -70,7 +70,35 @@ async function mutation(fn){if(!writable())throw Error('Bu işlem için yetkiniz
 async function submitForm(form){const fd=new FormData(form),obj=Object.fromEntries(fd.entries());switch(form.id){case 'orderForm':case 'quickOrder':await mutation(async()=>{check(await sb.from('orders').insert({code:obj.code.trim().toUpperCase()}));await logHistory({code:obj.code.trim().toUpperCase(),action:'Sipariş oluşturuldu'})});$('#modal').close();break;
 case 'renameForm':await mutation(async()=>{const previous=order(Number(obj.id));check(await sb.from('orders').update({code:obj.code.trim().toUpperCase()}).eq('id',Number(obj.id)));await logHistory({code:obj.code.trim().toUpperCase(),action:`Sipariş kodu değiştirildi (${previous?.code||'—'})`})});break;
 case 'batchForm':{const rec={order_id:Number(obj.order_id),litre:Number(obj.litre),pressure_bar:Number(obj.pressure_bar),target:Number(obj.target),start_date:obj.start_date||null,end_date:obj.end_date||null};if(rec.start_date&&rec.end_date&&rec.end_date<rec.start_date)throw Error('Bitiş tarihi başlangıçtan önce olamaz.');await mutation(async()=>{const previous=state.batches.find(b=>b.order_id===rec.order_id&&b.litre===rec.litre&&bar(b)===rec.pressure_bar);const saved=check(await sb.from('batches').upsert(rec,{onConflict:'order_id,litre,pressure_bar'}).select('*').single());await logHistory({b:saved,action:previous?'Üretim planı güncellendi':'Üretim planı oluşturuldu',oldQty:previous?.target??null,newQty:rec.target,change:previous?rec.target-Number(previous.target):rec.target})});break}
-case 'processForm':{const b=batch(Number(obj.batch_id));if(!b)throw Error('Üretim grubu bulunamadı.');const index=STAGES.indexOf(obj.process_name),quantity=Number(obj.quantity),target=Number(b.target)||0;if(index<0||!Number.isInteger(quantity)||quantity<0)throw Error('Geçerli bir proses ve adet seçin.');if(quantity>target)throw Error(`Girilen adet (${quantity}), sipariş adedini (${target}) geçemez.`);const q=quantities(b);if(index<STAGES.length-1&&quantity<q[index+1])throw Error('Sonraki prosese ulaşan adetten daha düşük değer giremezsiniz.');const records=[];for(let i=0;i<=index;i++){const next=i===index?quantity:Math.max(q[i],quantity);if(next!==q[i])records.push({batch_id:b.id,process_name:STAGES[i],quantity:next,updated_at:new Date().toISOString()})}if(index===0&&q[0]===quantity)records.push({batch_id:b.id,process_name:STAGES[0],quantity,updated_at:new Date().toISOString()});if(index>0&&q[index]===quantity)records.push({batch_id:b.id,process_name:STAGES[index],quantity,updated_at:new Date().toISOString()});await mutation(async()=>{if(records.length)check(await sb.from('process_tracking').upsert(records,{onConflict:'batch_id,process_name'}));if(quantity!==q[index])await logHistory({b,action:'Proses adedi güncellendi',process:obj.process_name,oldQty:q[index],newQty:quantity,change:quantity-q[index]})});break}
+
+case 'processForm': {
+  const batchId = Number(obj.batch_id);
+  const processName = String(obj.process_name);
+  const quantity = Number(obj.quantity);
+
+  if (!Number.isInteger(batchId) || batchId <= 0) {
+    throw Error('Geçersiz üretim grubu.');
+  }
+
+  if (!STAGES.includes(processName)) {
+    throw Error('Geçersiz proses.');
+  }
+
+  if (!Number.isInteger(quantity) || quantity < 0) {
+    throw Error('Geçerli bir üretim adedi girin.');
+  }
+
+  await mutation(async () => {
+    check(await sb.rpc('cbs_save_process', {
+      p_batch_id: batchId,
+      p_process_name: processName,
+      p_quantity: quantity
+    }));
+  });
+
+  break;
+}
+
 case 'serialForm':await mutation(async()=>check(await sb.from('serials').insert({batch_id:Number(obj.batch_id),serial:obj.serial.trim().toUpperCase(),stage:obj.stage})));break;}}
 function cbsConfirm(message){
   return new Promise(resolve=>{
