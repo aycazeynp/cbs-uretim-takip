@@ -55,7 +55,13 @@ function batchesOptions(){return options(activeBatches().map(b=>[b.id,batchLabel
 function summaryTable(){return `<div class="tablewrap"><table><thead><tr><th>Sipariş</th><th>Litre</th><th>Basınç</th><th>Plan</th><th>Sevk Edilen</th><th>İlerleme</th><th>Teslim</th></tr></thead><tbody>${activeBatches().map(b=>{const pct=progress(b);return `<tr><td><b>${esc(order(b.order_id)?.code)}</b></td><td>${b.litre} LT</td><td>${bar(b)} BAR</td><td>${b.target}</td><td>${shipped(b)}</td><td><div class="progress"><i style="width:${pct}%"></i></div><small>${pct}%</small></td><td>${esc(b.end_date||'—')}</td></tr>`}).join('')||'<tr><td colspan="7">Henüz üretim planı bulunmuyor.</td></tr>'}</tbody></table></div>`}
 const localISO=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 let historyDate=localISO(new Date());
-function historyTable(){const rows=state.history.filter(h=>!historyDate||localISO(new Date(h.created_at))===historyDate);return `<div class="tablewrap"><table><thead><tr><th>Tarih / Saat</th><th>Sipariş</th><th>Proses / İşlem</th><th>Adet</th></tr></thead><tbody>${rows.map(h=>`<tr><td>${esc(new Date(h.created_at).toLocaleString('tr-TR'))}</td><td>${esc(h.order_code)}${h.litre?' / '+h.litre+' LT':''}${h.pressure_bar?' / '+h.pressure_bar+' BAR':''}</td><td>${esc(h.process_name||h.action_type)}</td><td><b>${h.quantity_change==null?(h.new_quantity??'—'):(h.quantity_change>0?'+':'')+h.quantity_change}</b></td></tr>`).join('')||'<tr><td colspan="4">Bu tarihte kayıt bulunmuyor.</td></tr>'}</tbody></table></div>`}
+function historyTable(){
+  const rows=state.history.filter(h=>!historyDate||localISO(new Date(h.created_at))===historyDate);
+  return `<div class="tablewrap"><table><thead><tr><th>Tarih / Saat</th><th>Sipariş</th><th>Proses / İşlem</th><th>Adet</th><th>İşlem</th></tr></thead><tbody>${rows.map(h=>{
+    const canDelete=admin()&&h.batch_id!=null&&Number(h.quantity_change)>0&&['Proses adedi eklendi','Proses adedi güncellendi'].includes(h.action_type);
+    return `<tr><td>${esc(new Date(h.created_at).toLocaleString('tr-TR'))}</td><td>${esc(h.order_code)}${h.litre?' / '+esc(h.litre)+' LT':''}${h.pressure_bar?' / '+esc(h.pressure_bar)+' BAR':''}</td><td>${esc(h.process_name||h.action_type)}</td><td><b>${h.quantity_change==null?(h.new_quantity??'—'):(h.quantity_change>0?'+':'')+h.quantity_change}</b></td><td>${canDelete?`<button type="button" class="btn secondary" data-delete-process-entry="${h.id}">Sil</button>`:'—'}</td></tr>`;
+  }).join('')||'<tr><td colspan="5">Bu tarihte kayıt bulunmuyor.</td></tr>'}</tbody></table></div>`;
+}
 async function logHistory({b=null,code=null,action,process=null,oldQty=null,newQty=null,change=null}){check(await sb.from('production_history').insert({batch_id:b?.id||null,order_code:code||order(b?.order_id)?.code||'—',litre:b?.litre||null,pressure_bar:b?bar(b):null,process_name:process,action_type:action,old_quantity:oldQty,new_quantity:newQty,quantity_change:change}))}
 function render(){const planned=activeBatches().reduce((sum,b)=>sum+(Number(b.target)||0),0),delivered=activeBatches().reduce((sum,b)=>sum+shipped(b),0);$('#dashboard').innerHTML=`<div class="stats"><div class="stat"><div class="label">TOPLAM SİPARİŞ</div><div class="number">${state.orders.filter(o=>!o.archived_at).length}</div><div class="meta">Aktif sipariş</div></div><div class="stat"><div class="label">ÜRETİM GRUBU</div><div class="number">${activeBatches().length}</div><div class="meta">Litre bazlı plan</div></div><div class="stat"><div class="label">PLANLANAN TÜP</div><div class="number">${planned}</div><div class="meta">Toplam sipariş adedi</div></div><div class="stat"><div class="label">SEVK EDİLEN</div><div class="number">${delivered}</div><div class="meta">${planned?Math.round(delivered/planned*100):0}% sevkiyat</div></div></div><div class="panel"><h2>Üretim Durumu</h2>${summaryTable()}</div>`;
 $('#orders').innerHTML=`${writable()?`<div class="panel"><h2>Sipariş Oluştur</h2><form id="orderForm" class="form"><label>Sipariş kodu<input name="code" placeholder="CBS317" maxlength="40" required></label><button class="btn">+ Sipariş Ekle</button></form></div><div class="panel"><h2>Sipariş Kodu Düzenle</h2><form id="renameForm" class="form"><label>Sipariş<select name="id" required>${ordersOptions()}</select></label><label>Yeni kod<input name="code" maxlength="40" required></label><button class="btn">Kaydet</button></form></div><div class="panel"><h2>Litre Grubu / Üretim Planı</h2><form id="batchForm" class="form"><label>Sipariş<select name="order_id" required>${ordersOptions()}</select></label><label>Litre<select name="litre">${options(LITRES.map(n=>[n,n+' LT']))}</select></label><label>Basınç türü<select name="pressure_bar" required><option value="42">42 BAR</option><option value="25">25 BAR</option></select></label><label>Planlanan adet<input type="number" name="target" min="0" required></label><label>Başlangıç<input type="date" name="start_date"></label><label>Bitiş<input type="date" name="end_date"></label><button class="btn">Planı Kaydet</button></form><p class="muted small">Aynı sipariş, litre ve basınç yeniden kaydedilirse mevcut plan güncellenir.</p></div>`:''}<div class="panel"><h2>Kayıtlı Üretim Planları</h2>${summaryTable()}</div>${admin()?`<div class="panel"><h2>Sipariş ve Üretim Grubu İşlemleri</h2><p class="muted small">Silme işlemi bağlı üretim gruplarını, proses adetlerini ve seri numaralarını da kalıcı olarak kaldırabilir. Tamamlanan siparişleri saklamak için arşivleyin.</p><div class="tablewrap"><table><thead><tr><th>Sipariş</th><th>İşlem</th></tr></thead><tbody>${state.orders.filter(o=>!o.archived_at).map(o=>`<tr><td>${esc(o.code)}</td><td><button type="button" class="btn secondary" data-archive-order="${o.id}">Arşivle</button> <button type="button" class="btn secondary" data-del-order="${o.id}">Sil</button></td></tr>`).join('')||'<tr><td colspan="2">Aktif sipariş yok.</td></tr>'}</tbody></table></div><h2>Üretim Grubu Silme</h2><div class="tablewrap"><table><thead><tr><th>Sipariş / Litre</th><th>İşlem</th></tr></thead><tbody>${activeBatches().map(b=>`<tr><td>${esc(order(b.order_id)?.code)} / ${b.litre} LT / ${bar(b)} BAR</td><td><button type="button" class="btn secondary" data-del-batch="${b.id}">Sil</button></td></tr>`).join('')||'<tr><td colspan="2">Üretim grubu yok.</td></tr>'}</tbody></table></div></div><div class="panel"><h2>Arşivlenen Siparişler</h2><div class="tablewrap"><table><thead><tr><th>Sipariş</th><th>Arşiv Tarihi</th><th>İşlem</th></tr></thead><tbody>${state.orders.filter(o=>o.archived_at).map(o=>`<tr><td>${esc(o.code)}</td><td>${fmt(o.archived_at)}</td><td><button type="button" class="btn secondary" data-restore-order="${o.id}">Geri Yükle</button></td></tr>`).join('')||'<tr><td colspan="3">Arşivlenmiş sipariş yok.</td></tr>'}</tbody></table></div></div>`:''}`;
@@ -70,24 +76,13 @@ async function mutation(fn){if(!writable())throw Error('Bu işlem için yetkiniz
 async function submitForm(form){const fd=new FormData(form),obj=Object.fromEntries(fd.entries());switch(form.id){case 'orderForm':case 'quickOrder':await mutation(async()=>{check(await sb.from('orders').insert({code:obj.code.trim().toUpperCase()}));await logHistory({code:obj.code.trim().toUpperCase(),action:'Sipariş oluşturuldu'})});$('#modal').close();break;
 case 'renameForm':await mutation(async()=>{const previous=order(Number(obj.id));check(await sb.from('orders').update({code:obj.code.trim().toUpperCase()}).eq('id',Number(obj.id)));await logHistory({code:obj.code.trim().toUpperCase(),action:`Sipariş kodu değiştirildi (${previous?.code||'—'})`})});break;
 case 'batchForm':{const rec={order_id:Number(obj.order_id),litre:Number(obj.litre),pressure_bar:Number(obj.pressure_bar),target:Number(obj.target),start_date:obj.start_date||null,end_date:obj.end_date||null};if(rec.start_date&&rec.end_date&&rec.end_date<rec.start_date)throw Error('Bitiş tarihi başlangıçtan önce olamaz.');await mutation(async()=>{const previous=state.batches.find(b=>b.order_id===rec.order_id&&b.litre===rec.litre&&bar(b)===rec.pressure_bar);const saved=check(await sb.from('batches').upsert(rec,{onConflict:'order_id,litre,pressure_bar'}).select('*').single());await logHistory({b:saved,action:previous?'Üretim planı güncellendi':'Üretim planı oluşturuldu',oldQty:previous?.target??null,newQty:rec.target,change:previous?rec.target-Number(previous.target):rec.target})});break}
-
 case 'processForm': {
   const batchId = Number(obj.batch_id);
   const processName = String(obj.process_name);
   const quantity = Number(obj.quantity);
-
-  if (!Number.isInteger(batchId) || batchId <= 0) {
-    throw Error('Geçersiz üretim grubu.');
-  }
-
-  if (!STAGES.includes(processName)) {
-    throw Error('Geçersiz proses.');
-  }
-
-  if (!Number.isInteger(quantity) || quantity < 0) {
-    throw Error('Geçerli bir üretim adedi girin.');
-  }
-
+  if (!Number.isSafeInteger(batchId) || batchId <= 0) throw Error('Geçersiz üretim grubu.');
+  if (!STAGES.includes(processName)) throw Error('Geçersiz proses.');
+  if (!Number.isSafeInteger(quantity) || quantity <= 0) throw Error('Geçerli bir üretim adedi girin.');
   await mutation(async () => {
     check(await sb.rpc('cbs_save_process', {
       p_batch_id: batchId,
@@ -95,10 +90,8 @@ case 'processForm': {
       p_quantity: quantity
     }));
   });
-
   break;
 }
-
 case 'serialForm':await mutation(async()=>check(await sb.from('serials').insert({batch_id:Number(obj.batch_id),serial:obj.serial.trim().toUpperCase(),stage:obj.stage})));break;}}
 function cbsConfirm(message){
   return new Promise(resolve=>{
@@ -338,4 +331,22 @@ document.addEventListener('submit',async e=>{
     e.target.reset();$('#accountPasswordPanel').classList.add('hidden');toast('Şifreniz değiştirildi.');
   }catch(ex){box.textContent=ex.message||'Şifre değiştirilemedi.'}
   finally{button.disabled=false}
+});
+
+// Yönetici: yanlış eklenen proses girişini geri al ve geçmişten kaldır.
+document.addEventListener('click',async e=>{
+  const btn=e.target.closest('[data-delete-process-entry]');
+  if(!btn)return;
+  e.preventDefault();
+  if(!admin()){err(Error('Yalnızca yönetici silebilir.'));return}
+  const id=Number(btn.dataset.deleteProcessEntry);
+  const entry=state.history.find(h=>Number(h.id)===id);
+  if(!entry){err(Error('İşlem kaydı bulunamadı.'));return}
+  if(!await cbsConfirm(`${entry.order_code} / ${entry.process_name}\n${entry.quantity_change} adetlik girişi silmek istiyor musunuz?\n\nYalnızca bu prosesin adedi azalacak ve geçmiş kaydı kalıcı olarak silinecek.`))return;
+  btn.disabled=true;
+  try{
+    check(await sb.rpc('cbs_delete_process_entry',{p_history_id:id}));
+    await refresh();
+    toast('Yanlış giriş silindi.');
+  }catch(ex){err(ex);btn.disabled=false}
 });
