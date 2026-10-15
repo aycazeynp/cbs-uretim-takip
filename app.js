@@ -62,17 +62,8 @@ let backupMonth=localISO(new Date()).slice(0,7);
 function cbsPerfHTML(){
   const records=perfData.filter(h=>h.process_name&&STAGES.includes(h.process_name)&&Number(h.quantity_change)>0&&['Proses adedi eklendi','Proses adedi güncellendi'].includes(h.action_type));
   const sums=STAGES.map(name=>({name,total:records.filter(h=>h.process_name===name).reduce((s,h)=>s+Number(h.quantity_change||0),0)}));
-  const totalEntries=records.length;
-  const shipping=sums.find(x=>x.name==='SEVKİYAT')?.total||0;
-  const painting=sums.find(x=>x.name==='BOYA')?.total||0;
-  const orders=new Set(records.map(h=>h.order_code).filter(Boolean)).size;
   const max=Math.max(1,...sums.map(x=>x.total));
-  const byOrder=new Map();
-  for(const h of records){const key=h.order_code||'—';if(!byOrder.has(key))byOrder.set(key,{code:key,events:0,shipped:0,painted:0});const x=byOrder.get(key);x.events++;if(h.process_name==='SEVKİYAT')x.shipped+=Number(h.quantity_change);if(h.process_name==='BOYA')x.painted+=Number(h.quantity_change)}
-  const detail=[...byOrder.values()].sort((a,b)=>b.events-a.events);
-  return `<div class="cbs-metrics"><div class="cbs-metric"><small>Proses kayıtları</small><strong>${totalEntries.toLocaleString('tr-TR')}</strong><span>Seçilen ayda yapılan giriş</span></div><div class="cbs-metric"><small>Boya işlem adedi</small><strong>${painting.toLocaleString('tr-TR')}</strong><span>BOYA prosesine eklenen</span></div><div class="cbs-metric"><small>Sevkiyat işlem adedi</small><strong>${shipping.toLocaleString('tr-TR')}</strong><span>SEVKİYAT prosesine eklenen</span></div><div class="cbs-metric"><small>İşlem yapılan sipariş</small><strong>${orders}</strong><span>Farklı sipariş kodu</span></div></div>
-  <div class="panel"><h2>Proseslere Göre Aylık İşlem Adetleri</h2><p class="muted small">Aynı tüp farklı proseslerden geçebilir. Proses adetleri birbirine eklenerek toplam üretim olarak değerlendirilmez.</p><div class="cbs-bars">${sums.map(x=>`<div class="cbs-bar-row"><span>${esc(x.name)}</span><div class="cbs-bar-track"><i style="width:${Math.round(x.total/max*100)}%"></i></div><b>${x.total.toLocaleString('tr-TR')}</b></div>`).join('')}</div></div>
-  <div class="panel"><h2>Sipariş Bazında Aylık Hareketler</h2><div class="tablewrap"><table><thead><tr><th>Sipariş</th><th>Proses giriş sayısı</th><th>Boya adedi</th><th>Sevkiyat adedi</th></tr></thead><tbody>${detail.map(x=>`<tr><td><b>${esc(x.code)}</b></td><td>${x.events}</td><td>${x.painted}</td><td>${x.shipped}</td></tr>`).join('')||'<tr><td colspan="4">Bu ay proses kaydı yok.</td></tr>'}</tbody></table></div></div>`;
+  return `<div class="panel"><h2>Proseslere Göre Aylık Adetler</h2><p class="muted small">${esc(perfMonth)} ayında yapılan proses girişleri gösterilir. Her proses ayrı değerlendirilir; adetler birbirine eklenmez.</p><div class="cbs-bars">${sums.map(x=>`<div class="cbs-bar-row"><span>${esc(x.name)}</span><div class="cbs-bar-track"><i style="width:${Math.round(x.total/max*100)}%"></i></div><b>${x.total.toLocaleString('tr-TR')}</b></div>`).join('')}</div></div>`;
 }
 async function cbsLoadMonth(month){
   if(!admin())throw Error('Performans raporu yalnızca yöneticiye açıktır.');
